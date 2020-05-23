@@ -9,7 +9,7 @@ import numpy as np
 def loss_function(output_1, output_2, target_1, target_2):
     loss_1 = nn.CrossEntropyLoss()(output_1, target_1)
     loss_2 = nn.CrossEntropyLoss()(output_2, target_2)
-    return 3*loss_1 + loss_2
+    return loss_1 + loss_2
 
 
 def remove_endding_link(text):
@@ -30,7 +30,7 @@ def remove_name(text):
 
 def predict_selected_text(original_tweet, predicted_start, predicted_end, sentiment, offsets):
 
-    if sentiment == "neutral" or len(original_tweet.strip().split()) < 4:
+    if sentiment == "neutral" or len(original_tweet.strip().split()) < 2:
         return original_tweet
 
     pred_selected_text = ''
@@ -39,10 +39,26 @@ def predict_selected_text(original_tweet, predicted_start, predicted_end, sentim
         if (idx+1) < len(offsets) and offsets[idx][1] < offsets[idx+1][0]:
             pred_selected_text += " "
 
-    pred_selected_text = remove_endding_link(pred_selected_text)
-    if sentiment == 'negative':
-        pred_selected_text = remove_name(pred_selected_text)
+    # pred_selected_text = remove_endding_link(pred_selected_text)
+    # if sentiment == 'negative':
+    #     pred_selected_text = remove_name(pred_selected_text)
     return pred_selected_text
+
+
+def find_max_prob(log_p_start, log_p_end):
+    n = len(log_p_start)
+    sum_log_prob = np.zeros((n, n))
+    max_sum = np.NINF
+    pred_start = -1
+    pred_end = -1
+    for i in range(n):
+        for j in range(i, n):
+            sum_log_prob[i, j] = log_p_start[i] + log_p_end[j]
+            if(max_sum < sum_log_prob[i, j]):
+                pred_start = i
+                pred_end = j
+                max_sum = sum_log_prob[i, j]
+    return pred_start, pred_end
 
 
 def training(data_loader, model, optimizer, device, scheduler):
@@ -101,20 +117,22 @@ def evaluating(data_loader, model, device):
             logits_start, logits_end = model(
                 ids=ids, mask=mask, token_type_ids=token_type_ids)
 
-            prob_start = logits_start.cpu().detach().numpy()
-            prob_end = logits_end.cpu().detach().numpy()
+            prob_start = nn.functional.log_softmax(
+                logits_start, -1).cpu().detach().numpy()
+            prob_end = nn.functional.log_softmax(
+                logits_end, -1).cpu().detach().numpy()
 
             # log softmax + faire un tableau avec somme des probs et chercher le max
             for idx, tweet in enumerate(original_tweet):
                 selected_text = original_selected_text[idx]
                 tweet_sentiment = sentiment[idx]
-                p_start = prob_start[idx]
-                p_end = prob_end[idx]
-                p_ = np.argmax(p_start)
+                log_p_start = prob_start[idx]
+                log_p_end = prob_end[idx]
+                pred_start, pred_end = find_max_prob(log_p_start, log_p_end)
                 predicted_selected_text = predict_selected_text(
                     original_tweet=tweet,
-                    predicted_start=np.argmax(p_start),
-                    predicted_end=p_ + np.argmax(p_end[p_:]),
+                    predicted_start=pred_start,
+                    predicted_end=pred_end,
                     sentiment=tweet_sentiment,
                     offsets=offsets[idx]
                 )
@@ -154,7 +172,7 @@ def predicting(data_loader, model, device):
                 tweet_sentiment = sentiment[idx]
                 p_start = prob_start[idx]
                 p_end = prob_end[idx]
-
+                print(p_start)
                 predicted_selected_text = predict_selected_text(
                     original_tweet=tweet,
                     predicted_start=np.argmax(p_start),
