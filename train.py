@@ -63,6 +63,7 @@ def run():
     print("device: ", device)
     model = Net()
     model = Transformer(nb_layers=2)
+    print(model)
     model.to(device)
 
     num_training_steps = int(
@@ -71,7 +72,7 @@ def run():
     # best_jaccard = 0
 
     freeze(model)
-    for layer in ['logit', 'pooler']:
+    for layer in ['logit', 'pooler', 'intermediate_1', 'intermediate_2']:
         unfreeze_layer(model, layer)
 
     weight_decay = 0

@@ -6,35 +6,6 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 
-class KimCNN(nn.Module):
-    def __init__(self, embed_num, embed_dim, kernel_num, kernel_sizes, dropout, static):
-        super(KimCNN, self).__init__()
-        V = embed_num
-        D = embed_dim
-        Co = kernel_num
-        Ks = kernel_sizes
-
-        self.static = static
-        self.embed = nn.Embedding(V, D)
-        self.convs1 = nn.ModuleList([nn.Conv2d(1, Co, (K, D)) for K in Ks])
-        self.dropout = nn.Dropout(dropout)
-        self.fc1 = nn.Linear(len(Ks) * Co, config.MAX_LEN)
-
-    def forward(self, x):
-
-        if self.static:
-            x = Variable(x)
-        x = x.unsqueeze(1)  # (N, Ci, W, D)
-        x = [F.ea(conv(x)).squeeze(3)
-             for conv in self.convs1]  # [(N, Co, W), ...]*len(Ks)
-        x = [F.max_pool1d(i, i.size(2)).squeeze(2)
-             for i in x]  # [(N, Co), ...]*len(Ks)
-        x = torch.cat(x, 1)
-        x = self.dropout(x)  # (N, len(Ks)*Co)
-        output = self.fc1(x)  # (N, C)
-        return output
-
-
 class RoBERTaMultiPooler(nn.Module):
     """
     Custom RoBERTa Pooling head that takes the n last layers
@@ -54,7 +25,6 @@ class RoBERTaMultiPooler(nn.Module):
         self.nb_layers = nb_layers
         self.input_size = input_size
         self.poolers = nn.ModuleList([])
-
         for i in range(nb_layers):
             pooler = nn.Sequential(
                 nn.Linear(input_size, output_size), nn.ReLU())
@@ -71,12 +41,12 @@ class RoBERTaMultiPooler(nn.Module):
             torch tensor -- Pooled features
         """
         outputs = []
-
+        hs = []
         for i, (state) in enumerate(hidden_states[: self.nb_layers]):
             pooled = self.poolers[i](state)
             outputs.append(pooled)
-
-        return torch.cat(outputs, -1)
+            hs.append(state)
+        return torch.cat(outputs, -1), torch.cat(hs, -1)
 
 
 class Transformer(nn.Module):
@@ -114,12 +84,13 @@ class Transformer(nn.Module):
             self.pooler = nn.Sequential(
                 # nn.Dropout(.1),
                 nn.Linear(self.nb_features, pooler_ft),
-                nn.ReLU(),
+                nn.ReLU()
             )
-        self.drop_1 = nn.Dropout(.15)
-        self.drop_2 = nn.Dropout(.15)
-        self.intermediate = nn.Linear(nb_layers*pooler_ft, nb_layers*pooler_ft)
-        self.logit = nn.Linear(nb_layers*pooler_ft, 2)
+        self.drop_1 = nn.Dropout(.1)
+        self.intermediate_1 = nn.Linear(
+            nb_layers*pooler_ft, nb_layers*pooler_ft)
+        self.intermediate_2 = nn.Linear(nb_layers*pooler_ft, pooler_ft)
+        self.logit = nn.Linear(pooler_ft, 2)
 
     def forward(self, ids, mask, token_type_ids):
         """
@@ -138,13 +109,10 @@ class Transformer(nn.Module):
             token_type_ids=token_type_ids
         )
         hidden_states = hidden_states[::-1]
-
-        x = self.pooler(hidden_states)
-        x = self.drop_1(x)
-        res = x
-        x = self.intermediate(x)
-        x = self.drop_2(x + res)
-        logits = self.logit(x + res)
+        x, hs = self.pooler(hidden_states)
+        x = torch.relu(self.intermediate_1(x)+hs)
+        x = torch.relu(self.intermediate_2(x))
+        logits = self.logit(x)
 
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1)
