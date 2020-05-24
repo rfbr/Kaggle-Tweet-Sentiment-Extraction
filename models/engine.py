@@ -39,9 +39,9 @@ def predict_selected_text(original_tweet, predicted_start, predicted_end, sentim
         if (idx+1) < len(offsets) and offsets[idx][1] < offsets[idx+1][0]:
             pred_selected_text += " "
 
-    # pred_selected_text = remove_endding_link(pred_selected_text)
-    # if sentiment == 'negative':
-    #     pred_selected_text = remove_name(pred_selected_text)
+    pred_selected_text = remove_endding_link(pred_selected_text)
+    if sentiment == 'negative':
+        pred_selected_text = remove_name(pred_selected_text)
     return pred_selected_text
 
 
@@ -122,7 +122,6 @@ def evaluating(data_loader, model, device):
             prob_end = nn.functional.log_softmax(
                 logits_end, -1).cpu().detach().numpy()
 
-            # log softmax + faire un tableau avec somme des probs et chercher le max
             for idx, tweet in enumerate(original_tweet):
                 selected_text = original_selected_text[idx]
                 tweet_sentiment = sentiment[idx]

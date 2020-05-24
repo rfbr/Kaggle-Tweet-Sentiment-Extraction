@@ -54,12 +54,12 @@ class TweetDataset:
         }
 
         input_ids = [0] + [sentiment_id[sentiment]] + \
-            [2] + tweet_ids + [2]
-        token_type_ids = [0] * (len(tweet_ids) + 4)
+            [2] + [2] + tweet_ids + [2]
+        token_type_ids = [0] * (len(tweet_ids) + 5)
         mask = [1] * len(token_type_ids)
-        tweet_offsets = [(0, 0)] * 3 + tweet_offsets + [(0, 0)]
-        targets_start += 3
-        targets_end += 3
+        tweet_offsets = [(0, 0)] * 4 + tweet_offsets + [(0, 0)]
+        targets_start += 4
+        targets_end += 4
         padding_length = self.max_len - len(input_ids)
         if padding_length > 0:
             input_ids = input_ids + ([1] * padding_length)

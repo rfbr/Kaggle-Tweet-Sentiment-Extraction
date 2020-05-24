@@ -1,7 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
-
 if __name__ == '__main__':
     df = pd.read_csv('../../data/train.csv')
     df = df.dropna().reset_index(drop=True)

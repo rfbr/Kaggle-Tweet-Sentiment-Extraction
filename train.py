@@ -5,6 +5,7 @@ from models.model import Net
 from models.model_2 import Transformer
 from models import engine
 from utils import config
+from utils import metric
 from utils.freeze import freeze, unfreeze, freeze_layer, unfreeze_layer
 from utils.seed import set_seed
 from utils.adam_params import custom_params
@@ -27,23 +28,21 @@ def set_up_optimizer_scheduler(model,
     optimizer = AdamW(opt_params, lr=lr, betas=(.5, 0.999))
     scheduler = get_linear_schedule_with_warmup(optimizer,
                                                 num_training_steps=num_training_steps,
-                                                num_warmup_steps=num_training_steps)
+                                                num_warmup_steps=num_warmup_steps)
     return optimizer, scheduler
 
 
 def run():
     set_seed(42)
-    main_df = pd.read_csv(config.TRAINING_FILE).dropna().reset_index(drop=True)
+    main_df = pd.read_csv(config.TRAINING_FILE)
     folds = main_df['fold'].unique()
     scores = []
     for fold in folds:
         print(f'Fold {fold}')
         df_train = main_df[main_df['fold'] != fold].reset_index(drop=True)
+        df_train = df_train[df_train['sentiment'].isin(
+            ['positive', 'negative'])]
         df_valid = main_df[main_df['fold'] == fold].reset_index(drop=True)
-        # df_train, df_valid = train_test_split(main_df,
-        #                                       test_size=.1)
-        # df_train = df_train.reset_index(drop=True)
-        # df_valid = df_valid.reset_index(drop=True)
 
         train_dataset = TweetDataset(
             tweets=df_train['text'].values,
@@ -104,7 +103,7 @@ def run():
 
         # weight_decay = 0
         # epochs = 4
-        # lr = 1e-3
+        # lr = 5e-3
         # num_training_steps = int(
         #     len(df_train) / config.TRAIN_BATCH_SIZE * epochs)
         # optimizer, scheduler = set_up_optimizer_scheduler(model,
@@ -129,7 +128,7 @@ def run():
 
         # lr_transfo = 3e-5
         # lr = 1e-4
-        # lr_decay = 0.975
+        # lr_decay = 0.95
         # optimizer, scheduler = set_up_optimizer_scheduler(model,
         #                                                   num_training_steps,
         #                                                   weight_decay,
