@@ -3,6 +3,9 @@ import os
 import pandas as pd
 from models.model import Net
 from models.model_2 import Transformer
+#
+from models.model_beam_search import Transformer_beam
+#
 from models import engine
 from utils import config
 from utils import metric
@@ -66,7 +69,10 @@ def run():
         device = torch.device(
             'cuda') if torch.cuda.is_available() else torch.device('cpu')
         print("device: ", device)
-        model = Transformer(nb_layers=2)
+        # model = Transformer(nb_layers=2)
+        #
+        model = Transformer_beam()
+        #
         model.to(device)
 
         best_jaccard = 0
@@ -90,12 +96,15 @@ def run():
         for epoch in range(config.EPOCHS):
             engine.training(train_data_loader, model,
                             optimizer, device, scheduler)
-            jaccard = engine.evaluating(valid_data_loader, model, device)
+            # jaccard = engine.evaluating(valid_data_loader, model, device)
+            #
+            jaccard = engine.evaluating_beam(valid_data_loader, model, device)
+            #
             print(f'Jaccard validation score: {jaccard}')
             if jaccard > best_jaccard:
                 torch.save(model.state_dict(),
                            os.path.join(config.SAVED_MODEL_PATH,
-                                        f'model_{fold}.bin'))
+                                        f'model_{fold}_gru_bs.bin'))
                 best_jaccard = jaccard
         # freeze(model)
         # for layer in ['logit', 'pooler', 'intermediate_1', 'intermediate_2']:

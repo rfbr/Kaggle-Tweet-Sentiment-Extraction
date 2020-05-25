@@ -86,6 +86,9 @@ def training(data_loader, model, optimizer, device, scheduler):
         loss = loss_function(logits_start, logits_end, targets_start,
                              targets_end)
         loss.backward()
+        #
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        #
         optimizer.step()
         scheduler.step()
         losses.update(loss.item(), ids.size(0))
@@ -140,6 +143,56 @@ def evaluating(data_loader, model, device):
 
     return np.mean(scores)
 
+####
+def evaluating_beam(data_loader, model, device):
+    model.eval()
+    scores = []
+
+    with torch.no_grad():
+        for batch_idx, data in enumerate(tqdm(data_loader)):
+            ids = data['ids']
+            mask = data['mask']
+            token_type_ids = data["token_type_ids"]
+            original_selected_text = data['original_selected_text']
+            original_tweet = data['original_tweet']
+            sentiment = data['sentiment']
+            targets_start = data['targets_start']
+            targets_end = data['targets_end']
+            offsets = data['offsets'].numpy()
+
+            ids = ids.to(device, dtype=torch.long)
+            token_type_ids = token_type_ids.to(device, dtype=torch.long)
+            mask = mask.to(device, dtype=torch.long)
+            targets_start = targets_start.to(device, dtype=torch.long)
+            targets_end = targets_end.to(device, dtype=torch.long)
+
+            beam_size_start = 15
+            beam_size_end = 1
+            start_top_scores, start_top_index, end_top_scores, end_top_index = model(ids=ids, mask=mask, token_type_ids=token_type_ids, beam_size_start=beam_size_start, beam_size_end=beam_size_end)
+            mask = torch.tensor([[float('-inf') if end_top_index[k][l + j * beam_size_end] < start_top_index[k][j] else start_top_scores[k][j] for l in range(beam_size_end) for j in range(beam_size_start)] for k in range(len(data['ids']))]).to(device)
+            end_top_scores += mask
+            score_end, k_max = end_top_scores.max(dim=1)
+            j_max = (k_max - k_max % beam_size_end) // beam_size_end
+
+            e_idx = [end_top_index[j][k_max[j]] for j in range(len(data['ids']))]
+            s_idx = [start_top_index[j][j_max[j]] for j in range(len(data['ids']))]
+
+            for idx, tweet in enumerate(original_tweet):
+                selected_text = original_selected_text[idx]
+                tweet_sentiment = sentiment[idx]
+                pred_start, pred_end = s_idx[idx], e_idx[idx]
+                predicted_selected_text = predict_selected_text(
+                    original_tweet=tweet,
+                    predicted_start=pred_start,
+                    predicted_end=pred_end,
+                    sentiment=tweet_sentiment,
+                    offsets=offsets[idx]
+                )
+                scores.append(jaccard(selected_text.strip(),
+                                      predicted_selected_text))
+
+    return np.mean(scores)
+####
 
 def predicting(data_loader, model, device):
     model.eval()
