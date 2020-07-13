@@ -1,15 +1,14 @@
 import torch.nn as nn
-import torch
 import transformers
 from utils import config
-from torch.autograd import Variable
-import torch.nn.functional as F
+import torch
 
 
 class RoBERTaMultiPooler(nn.Module):
     """
     Custom RoBERTa Pooling head that takes the n last layers
     """
+
     def __init__(self, nb_layers=1, input_size=768, output_size=768):
         """
         Constructor
@@ -29,7 +28,7 @@ class RoBERTaMultiPooler(nn.Module):
                              hidden_size=384,
                              batch_first=True,
                              bidirectional=True,
-                             num_layers=2)
+                             num_layers=1)
             # pooler = nn.Sequential(
             #     nn.Linear(input_size, output_size), nn.ReLU())
             self.poolers.append(pooler)
@@ -54,8 +53,8 @@ class RoBERTaMultiPooler(nn.Module):
         return torch.cat(outputs, -1), torch.cat(hs, -1)
 
 
-class Transformer(nn.Module):
-    def __init__(self, nb_layers=1, pooler_ft=None):
+class StartTransformer(nn.Module):
+    def __init__(self):
         """
         Constructor
 
@@ -67,52 +66,49 @@ class Transformer(nn.Module):
             pooler_ft {[type]} -- Number of features for the pooler. If None, use the same number as the transformer (default: {None})
             avg_pool {bool} -- Whether to use average pooling instead of pooling on the first tensor (default: {False})
         """
-        super(Transformer, self).__init__()
+        super(StartTransformer, self).__init__()
         conf = transformers.RobertaConfig.from_pretrained(config.ROBERTA_MODEL)
         conf.output_hidden_states = True
-        self.roberta = transformers.RobertaModel.from_pretrained(
+        self.transformer = transformers.RobertaModel.from_pretrained(
             config.ROBERTA_MODEL, config=conf)
-        self.nb_layers = nb_layers
+        self.pooler = RoBERTaMultiPooler(nb_layers=2,
+                                         input_size=768,
+                                         output_size=384)
 
-        self.nb_features = self.roberta.pooler.dense.out_features
-
-        if pooler_ft is None:
-            pooler_ft = self.nb_features
-
-        if nb_layers != 1:
-            self.pooler = RoBERTaMultiPooler(nb_layers=nb_layers,
-                                             input_size=self.nb_features,
-                                             output_size=pooler_ft)
-        else:
-            self.pooler = nn.Sequential(
-                # nn.Dropout(.1),
-                nn.Linear(self.nb_features, pooler_ft),
-                nn.ReLU())
-
-        self.intermediate_1 = nn.Linear(nb_layers * pooler_ft,
-                                        nb_layers * pooler_ft)
-        self.intermediate_2 = nn.Linear(nb_layers * pooler_ft, pooler_ft)
-        self.class_logit = nn.Linear(pooler_ft, 3)
+        self.intermediate_1 = nn.Linear(2 * 768, 2 * 768)
+        self.intermediate_2 = nn.Linear(2 * 768, 768)
+        self.logit = nn.Linear(768, 1)
 
     def forward(self, ids, mask):
-        """
-        Usual torch forward function
-
-        Arguments:
-            tokens {torch tensor} -- Sentence tokens
-
-        Returns:
-            torch tensor -- Class logits
-            torch tensor -- Pooled features
-        """
-        _, _, hidden_states = self.roberta(input_ids=ids, attention_mask=mask)
+        _, _, hidden_states = self.transformer(input_ids=ids,
+                                               attention_mask=mask)
         hidden_states = hidden_states[::-1]
+        last_emb = hidden_states[0]
         x, hs = self.pooler(hidden_states)
-        # x = self.drop_1(x)
         x = torch.relu(self.intermediate_1(x) + hs)
-        # x = self.drop_2(x)
         x = torch.relu(self.intermediate_2(x))
-        # x = self.drop_3(x)
-        logits = self.class_logit(x.mean(1))
+        start_logits = self.logit(x).squeeze(-1)
+        return start_logits, last_emb
 
-        return logits
+
+class EndTransformer(nn.Module):
+    def __init__(self):
+        super(EndTransformer, self).__init__()
+        conf = transformers.RobertaConfig.from_pretrained(config.ROBERTA_MODEL)
+        conf.output_hidden_states = True
+        self.transformer = transformers.RobertaModel.from_pretrained(
+            config.ROBERTA_MODEL, config=conf)
+        self.end_token_gru = nn.GRU(768,
+                                    768,
+                                    batch_first=True,
+                                    bidirectional=True)
+        self.end_token_logits = nn.Sequential(nn.Linear(2*768, 768),
+                                              nn.ReLU(), nn.Linear(768, 1))
+
+    def forward(self, start_embedding, ids, mask):
+        _, _, hidden_states = self.transformer(input_ids=ids,
+                                               attention_mask=mask)
+        embeddings = hidden_states[-1]
+        outputs, _ = self.end_token_gru(embeddings, start_embedding)
+        end_logits = self.end_token_logits(outputs).squeeze(-1)
+        return end_logits

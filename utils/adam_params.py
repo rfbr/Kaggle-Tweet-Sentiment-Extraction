@@ -15,20 +15,20 @@ def custom_params(model, weight_decay=0, lr=1e-3, lr_transfo=3e-5, lr_decay=1):
         torch opt_params -- Parameters to feed the optimizer for the model
     """
     opt_params = []
-    no_decay = ["bias", "LayerNorm.weight"]
-    nb_blocks = len(model.transformer.encoder.layer)
+    no_decay = ["bias", "LayerNorm.weight", "LayerNorm.bias"]
+    nb_blocks = len(model.roberta.encoder.layer)
 
     for n, p in model.named_parameters():
         wd = 0 if any(nd in n for nd in no_decay) else weight_decay
 
-        if "transformer" in n and "pooler" not in n:
+        if "roberta" in n and "pooler" not in n:
             lr_ = lr_transfo
-            if "transformer.embeddings" in n:
-                lr_ = lr_transfo * lr_decay ** (nb_blocks)
+            if "roberta.embeddings" in n:
+                lr_ = lr_transfo * lr_decay**(nb_blocks)
             else:
                 for i in range(nb_blocks):  # for bert base
                     if f"layer.{i}." in n:
-                        lr_ = lr_transfo * lr_decay ** (nb_blocks - 1 - i)
+                        lr_ = lr_transfo * lr_decay**(nb_blocks - 1 - i)
                         break
         else:
             lr_ = lr
