@@ -1,4 +1,5 @@
 import os
+
 from tokenizers import ByteLevelBPETokenizer
 
 MAX_LEN = 70

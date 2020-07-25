@@ -1,11 +1,9 @@
-import nlpaug.augmenter.word as naw
-import numpy as np
-import pandas as pd
 import re
 import string
-from sklearn.model_selection import StratifiedKFold
 
-aug = naw.ContextualWordEmbsAug(
+import nlpaug.augmenter.word as naw
+
+AUG = naw.ContextualWordEmbsAug(
     model_path='bert-base-uncased', action="substitute", top_k=50,
     skip_unknown_word=True, include_detail=True, device='cuda')
 
@@ -35,7 +33,7 @@ def find_start_end(text, selected_text):
     return start_idx, end_idx
 
 
-def data_augmentation(text, selected_text, sentiment, fold):
+def text_augmentation(text, selected_text):
     tmp = re.findall(r"[\w']+|[.,*!?;:`-]", text)
     text = ' '.join([w for w in tmp])
     tmp = re.findall(r"[\w']+|[.,*!?;:`-]", selected_text)
@@ -44,7 +42,7 @@ def data_augmentation(text, selected_text, sentiment, fold):
     start_idx, end_idx = find_start_end(text, selected_text)
 
     try:
-        augmented_text, infos = aug.augment(text)
+        augmented_text, infos = AUG.augment(text)
         for info in infos:
             delta = len(info['new_token']) - len(info['orig_token'])
             if info['orig_start_pos'] < start_idx:
@@ -52,28 +50,6 @@ def data_augmentation(text, selected_text, sentiment, fold):
                 end_idx += delta
             elif start_idx <= info['orig_start_pos'] < end_idx:
                 end_idx += delta
-        return punc_formating(augmented_text), punc_formating(augmented_text[start_idx:end_idx+1]), sentiment, fold
+        return punc_formating(augmented_text), punc_formating(augmented_text[start_idx:end_idx+1])
     except:
-        return np.nan, np.nan, np.nan, np.nan
-
-
-if __name__ == '__main__':
-    # load dataset and assign fold
-    df = pd.read_csv('../../data/train.csv')
-    df = df.dropna().reset_index(drop=True)
-    df['fold'] = -1
-
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    for fold, (train_idx,
-               val_idx) in enumerate(kfold.split(X=df, y=df['sentiment'])):
-        df.loc[val_idx, 'fold'] = fold
-    aug_df = pd.DataFrame()
-    aug_df['text'], aug_df['selected_text'], aug_df['sentiment'], aug_df['fold'] = zip(
-        *df.apply(lambda x: data_augmentation(x['text'],
-                                              x['selected_text'],
-                                              x['sentiment'],
-                                              x['fold']), axis=1))
-    aug_df = aug_df.dropna()
-    main_df = pd.concat([df.drop('textID', axis=1), aug_df],
-                        axis=0).reset_index(drop=True)
-    main_df.to_csv('../../data/train_aug_fold.csv', index=False)
+        return text, selected_text

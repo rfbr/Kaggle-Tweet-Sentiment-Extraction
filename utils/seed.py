@@ -1,15 +1,16 @@
-import random
 import os
-import torch
+import random
+
 import numpy as np
+import torch
 
 
 def set_seed(seed):
     """
-    Seeds basic parameters for reproductibility of results
+    Seeds basic parameters for reproductibility of results.
 
-    Arguments:
-        seed {int} -- Number of the seed
+    Parameters:
+        seed {int}: number of the seed.
     """
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
